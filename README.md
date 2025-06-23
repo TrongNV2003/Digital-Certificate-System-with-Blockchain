@@ -11,6 +11,7 @@ The project deploys a digital certificate system on the Sepolia testnet, using S
 - To get ETH on testnet, you can ask ETH from [Here](https://cloud.google.com/application/web3/faucet/ethereum/sepolia) 
 - Check balance account on testnet Sepolia: https://sepolia.etherscan.io/address/CONTRACT_ADDRESS
 - Register Infura to connect your backend to Sepolia Blockchain network from [Here](https://www.infura.io/)
+- To modify your own Smart Contract and Contract ABI, you can self-modify from [Remix](https://remix.ethereum.org)
 
 ## Note
 - This is a project on Sepolia testnet, not for mainnet, Only for academic and research projects.
