@@ -30,6 +30,9 @@ async def issue_certificate(data: CertificateInput):
         tx_receipt = await blockchain_client.issue_certificate(
             data.id, recipient_hash, course_hash, signature
         )
+        if tx_receipt.status == 0:
+            logger.error(f"Giao dịch cấp chứng chỉ ID {data.id} thất bại")
+            raise HTTPException(status_code=500, detail="Giao dịch thất bại trên blockchain")
 
         certificate_data = {
             'id': data.id,
@@ -82,29 +85,32 @@ async def revoke_certificate(data: RevokeInput):
 async def verify_certificate(id: str):
     """
     Tra cứu chứng chỉ từ blockchain và MongoDB.
-
-    Args:
-        id (str): ID chứng chỉ.
-
-    Returns:
-        dict: Thông tin chứng chỉ.
     """
     try:
-        cert = blockchain_client.verify_certificate(id)
-        cert_data = mongo_client.find_certificate(id)
-
+        certificate = mongo_client.find_certificate(id)
+        if not certificate:
+            logger.error(f"Chứng chỉ ID {id} không tìm thấy trong database")
+            raise HTTPException(status_code=404, detail="Chứng chỉ không tồn tại")
+        
+        cert_data = await blockchain_client.verify_certificate(id)
         if not cert_data:
             raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu gốc")
-
+        
+        if (certificate['recipientHash'] != cert_data[1].hex() or 
+            certificate['courseHash'] != cert_data[2].hex() or 
+            certificate['signature'] != cert_data[4].hex()):
+            logger.error(f"Dữ liệu chứng chỉ ID {id} không khớp giữa MongoDB và blockchain")
+            raise HTTPException(status_code=400, detail="Dữ liệu chứng chỉ không khớp")
+        
         return {
-            'id': cert[0],
-            'recipient': cert_data['recipient'],
-            'recipientHash': cert[1].hex(),
-            'course': cert_data['course'],
-            'courseHash': cert[2].hex(),
-            'issueDate': cert[3],
-            'signature': cert[4].hex(),
-            'revoked': cert_data.get('revoked', False)
+            'id': cert_data[0],
+            'recipient': certificate['recipient'],
+            'recipientHash': cert_data[1].hex(),
+            'course': certificate['course'],
+            'courseHash': cert_data[2].hex(),
+            'issueDate': cert_data[3],
+            'signature': cert_data[4].hex(),
+            'revoked': certificate["revoked"]
         }
     except Exception as e:
         logger.error(f"Lỗi khi tra cứu chứng chỉ: {str(e)}")

@@ -38,12 +38,6 @@ class BlockchainClient:
     def calculate_hash(self, data: str) -> str:
         """
         Calculate hash keccak256.
-
-        Args:
-            data (str): hashing data.
-
-        Returns:
-            str: Hash data with hex.
         """
         return self.w3.keccak(text=data).hex()
 
@@ -65,7 +59,10 @@ class BlockchainClient:
                 [id, self.w3.to_bytes(hexstr=recipient_hash), self.w3.to_bytes(hexstr=course_hash)]
             )
             signable_message = encode_defunct(message)
-            signed_message = Account.sign_message(signable_message, web3_config.private_key)
+            signed_message = Account.sign_message(
+                signable_message, 
+                private_key=web3_config.private_key
+            )
             logger.debug(f"Tạo chữ ký cho chứng chỉ ID: {id}")
             return signed_message.signature.hex()
         except Exception as e:
@@ -129,7 +126,7 @@ class BlockchainClient:
         function_call = self.contract.functions.revokeCertificate(id)
         return await self.send_transaction(function_call)
 
-    def verify_certificate(self, id: str):
+    async def verify_certificate(self, id: str):
         """
         Gọi hàm verifyCertificate trên smart contract.
 
@@ -146,3 +143,20 @@ class BlockchainClient:
         except Exception as e:
             logger.error(f"Lỗi tra cứu chứng chỉ: {str(e)}")
             raise HTTPException(status_code=404, detail=str(e))
+        
+    async def add_admin(self, new_admin_address: str):
+        """
+        Gọi hàm addAdmin trên smart contract để thêm admin mới.
+
+        Args:
+            new_admin_address (str): Địa chỉ Ethereum của admin mới.
+
+        Returns:
+            dict: Biên nhận giao dịch.
+        """
+        try:
+            function_call = self.contract.functions.addAdmin(new_admin_address)
+            return await self.send_transaction(function_call)
+        except Exception as e:
+            logger.error(f"Lỗi khi thêm admin: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))

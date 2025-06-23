@@ -2,12 +2,10 @@ import asyncio
 from loguru import logger
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.routes.routes import router
 from backend.event_listener.event_listener import listen_events
-
-
-app = FastAPI(title="Hệ thống Chứng chỉ Số")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -19,7 +17,16 @@ async def lifespan(app: FastAPI):
         task.cancel()
         logger.info("Ngừng lắng nghe sự kiện blockchain")
 
+
 app = FastAPI(title="Hệ thống Chứng chỉ Số", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 app.include_router(router)
 
