@@ -6,6 +6,18 @@ The project deploys a digital certificate system on the Sepolia testnet, using S
 2. Install front-end: `cd frontend && npm install`
 3. Configuration `.env` (watch `.env.example`)
 
+## Examples
+Run Front-end:
+```
+cd frontend
+npm start
+```
+
+Run Back-end
+```
+python backend/app.py
+```
+
 ## Instruction
 - To open wallet, please install MetaMask Extensions on Chrome.
 - To get ETH on testnet, you can ask ETH from [Here](https://cloud.google.com/application/web3/faucet/ethereum/sepolia) 
