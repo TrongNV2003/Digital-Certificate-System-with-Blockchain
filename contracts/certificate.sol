@@ -56,6 +56,8 @@ contract Certificate {
 
     // Xóa admin
     function removeAdmin(address adminAddress) public onlyOwner {
+        require(adminAddress != msg.sender, "Cannot remove yourself");
+        require(admins[adminAddress], "Admin does not exist");
         admins[adminAddress] = false;
         emit AdminRemoved(adminAddress);
     }
