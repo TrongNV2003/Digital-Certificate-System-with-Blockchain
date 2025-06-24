@@ -32,6 +32,10 @@ class MongoDBConfig(BaseSettings):
         default='certificates',
         description="Name of the MongoDB collection for certificates"
     )
+    user_collection_name: str = Field(
+        default='users',
+        description="Name of the MongoDB collection for user accounts"
+    )
     admin_collection_name: str = Field(
         default='admins',
         description="Name of the MongoDB collection for admin accounts"

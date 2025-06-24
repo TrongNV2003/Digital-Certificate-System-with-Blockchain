@@ -1,9 +1,11 @@
+import os
 import jwt
+import bcrypt
 import asyncio
 from loguru import logger
-from datetime import datetime
-from fastapi.security import OAuth2PasswordBearer
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from backend.db.connector import MongoDBClient
 from backend.blockchain.blockchain import BlockchainClient
@@ -13,21 +15,64 @@ router = APIRouter(prefix="/api", tags=["Certificate"])
 
 mongo_client = MongoDBClient()
 blockchain_client = BlockchainClient()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        # Nếu hashed_password là chuỗi, encode thành bytes
+        if isinstance(hashed_password, str):
+            hashed_password_bytes = hashed_password.encode('utf-8')
+        else:
+            hashed_password_bytes = hashed_password
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password_bytes)
+    except ValueError as e:
+        logger.error(f"Lỗi xác thực mật khẩu: {str(e)}")
+        return False
 
 def verify_token(token: str = Depends(oauth2_scheme)):
     try:
-        payload = jwt.decode(token, "your-secret-key", algorithms=["HS256"])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         if payload.get("role") != "super_admin":
             raise HTTPException(status_code=403, detail="Không có quyền admin")
         return payload
     except Exception:
         raise HTTPException(status_code=401, detail="Token không hợp lệ")
 
+# API tạo token
+@router.post("/token")
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    """
+    Tạo token JWT cho người dùng.
+
+    Args:
+        form_data: Username và password từ form.
+
+    Returns:
+        dict: Token JWT và loại token.
+    """
+    try:
+        user = mongo_client.user_collection.find_one({"username": form_data.username})
+        if not user or not verify_password(form_data.password, user["password"]):
+            raise HTTPException(status_code=401, detail="Tên người dùng hoặc mật khẩu không đúng")
+        if user.get("role") != "super_admin":
+            raise HTTPException(status_code=403, detail="Không có quyền admin")
+        
+        token_data = {
+            "sub": form_data.username,
+            "role": user["role"],
+            "exp": datetime.utcnow() + timedelta(minutes=30)
+        }
+        token = jwt.encode(token_data, SECRET_KEY, algorithm="HS256")
+        logger.info(f"Đã cấp token cho {form_data.username}")
+        return {"access_token": token, "token_type": "bearer"}
+    except Exception as e:
+        logger.error(f"Lỗi khi tạo token: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/issue-certificate")
-async def issue_certificate(data: CertificateInput):
+async def issue_certificate(data: CertificateInput, payload=Depends(verify_token)):
     """
     Issue new certificate and save to MongoDB.
 
@@ -73,7 +118,7 @@ async def issue_certificate(data: CertificateInput):
 
 
 @router.post("/revoke-certificate")
-async def revoke_certificate(data: RevokeInput):
+async def revoke_certificate(data: RevokeInput, payload=Depends(verify_token)):
     """
     Revoke certificate and update MongoDB.
 
@@ -156,7 +201,7 @@ async def get_events():
     
 
 @router.post("/add-admin")
-async def add_admin(data: AdminInput):
+async def add_admin(data: AdminInput, payload=Depends(verify_token)):
     try:
         if not data.address.startswith('0x') or len(data.address) != 42:
             raise ValueError("Địa chỉ admin không hợp lệ")
@@ -184,7 +229,7 @@ async def add_admin(data: AdminInput):
 
 
 @router.post("/remove-admin")
-async def remove_admin(data: AdminInput):
+async def remove_admin(data: AdminInput, payload=Depends(verify_token)):
     """
     Xóa admin khỏi smart contract và MongoDB.
 

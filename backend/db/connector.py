@@ -19,8 +19,11 @@ class MongoDBClient:
             self.client = MongoClient(uri)
             self.db = self.client[db_name]
             self.cert_collection = self.db[db_config.collection_name]
+            
+            self.user_collection = self.db[db_config.user_collection_name]
             self.admin_collection = self.db[db_config.admin_collection_name]
             self.admin_log_collection = self.db[db_config.admin_log_collection_name]
+            
             
             self.client.admin.command("ping")
             logger.info(f"Connected to MongoDB at {uri}, database: {db_name}")
