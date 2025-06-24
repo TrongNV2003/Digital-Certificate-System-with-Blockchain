@@ -10,7 +10,13 @@ function Events() {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const response = await api.getEvents();
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('Vui lòng đăng nhập');
+        }
+        const response = await api.getEvents({
+          headers: { Authorization: `Bearer ${token}` }
+        });
         if (!response.data || !Array.isArray(response.data.admin_events)) {
           throw new Error('Dữ liệu admin_events không hợp lệ');
         }

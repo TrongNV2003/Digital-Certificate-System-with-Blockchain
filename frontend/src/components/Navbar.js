@@ -1,19 +1,47 @@
+import React from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'react-toastify';
 
-function Navbar() {
+const Navbar = ({ handleLogout }) => {
+  const token = localStorage.getItem('token');
+
+  const onLogout = () => {
+    handleLogout();
+    toast.success('Đăng xuất thành công!');
+  };
+
   return (
     <nav className="bg-blue-600 p-4 shadow-md">
-      <div className="container mx-auto flex justify-between items-center">
-        <h1 className="text-white text-xl font-bold">Hệ thống Chứng chỉ Số</h1>
-        <div className="space-x-4">
-          <Link to="/" className="text-white hover:text-gray-200">Cấp Chứng chỉ</Link>
-          <Link to="/revoke" className="text-white hover:text-gray-200">Thu hồi</Link>
-          <Link to="/verify" className="text-white hover:text-gray-200">Tra cứu</Link>
-          <Link to="/events" className="text-white hover:text-gray-200">Sự kiện</Link>
-        </div>
-      </div>
+      <ul className="flex space-x-6 justify-center text-white">
+        <li>
+          <Link to="/" className="hover:underline">Cấp chứng chỉ</Link>
+        </li>
+        <li>
+          <Link to="/revoke" className="hover:underline">Thu hồi chứng chỉ</Link>
+        </li>
+        <li>
+          <Link to="/verify" className="hover:underline">Tra cứu chứng chỉ</Link>
+        </li>
+        <li>
+          <Link to="/events" className="hover:underline">Sự kiện</Link>
+        </li>
+        <li>
+          <Link to="/admin" className="hover:underline">Quản lý Admin</Link>
+        </li>
+        {token ? (
+          <li>
+            <button onClick={onLogout} className="hover:underline">
+              Đăng xuất
+            </button>
+          </li>
+        ) : (
+          <li>
+            <Link to="/login" className="hover:underline">Đăng nhập</Link>
+          </li>
+        )}
+      </ul>
     </nav>
   );
-}
+};
 
 export default Navbar;
