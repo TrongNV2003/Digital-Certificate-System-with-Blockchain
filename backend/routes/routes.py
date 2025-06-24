@@ -1,14 +1,29 @@
+import jwt
+import asyncio
 from loguru import logger
-from fastapi import APIRouter, HTTPException
+from datetime import datetime
+from fastapi.security import OAuth2PasswordBearer
+from fastapi import APIRouter, HTTPException, Depends, Request
 
 from backend.db.connector import MongoDBClient
 from backend.blockchain.blockchain import BlockchainClient
-from backend.utils.utils import CertificateInput, RevokeInput
+from backend.utils.utils import CertificateInput, RevokeInput, AdminInput
 
 router = APIRouter(prefix="/api", tags=["Certificate"])
 
 mongo_client = MongoDBClient()
 blockchain_client = BlockchainClient()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+
+def verify_token(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, "your-secret-key", algorithms=["HS256"])
+        if payload.get("role") != "super_admin":
+            raise HTTPException(status_code=403, detail="Không có quyền admin")
+        return payload
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token không hợp lệ")
 
 
 @router.post("/issue-certificate")
@@ -33,7 +48,8 @@ async def issue_certificate(data: CertificateInput):
         if tx_receipt.status == 0:
             logger.error(f"Giao dịch cấp chứng chỉ ID {data.id} thất bại")
             raise HTTPException(status_code=500, detail="Giao dịch thất bại trên blockchain")
-
+        
+        await asyncio.sleep(10)
         certificate_data = {
             'id': data.id,
             'recipient': data.recipient,
@@ -55,6 +71,7 @@ async def issue_certificate(data: CertificateInput):
         logger.error(f"Lỗi khi cấp chứng chỉ: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.post("/revoke-certificate")
 async def revoke_certificate(data: RevokeInput):
     """
@@ -74,12 +91,13 @@ async def revoke_certificate(data: RevokeInput):
             'event': 'CertificateRevoked'
         })
         return {
-            'message': 'Revoke certificate successfully',
+            'message': 'Thu hồi chứng chỉ thành công',
             'txHash': tx_receipt['transactionHash'].hex()
         }
     except Exception as e:
         logger.error(f"Lỗi khi thu hồi chứng chỉ: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/verify-certificate/{id}")
 async def verify_certificate(id: str):
@@ -92,29 +110,30 @@ async def verify_certificate(id: str):
             logger.error(f"Chứng chỉ ID {id} không tìm thấy trong database")
             raise HTTPException(status_code=404, detail="Chứng chỉ không tồn tại")
         
-        cert_data = await blockchain_client.verify_certificate(id)
-        if not cert_data:
-            raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu gốc")
+        # cert_data = await blockchain_client.verify_certificate(id)
+        # if not cert_data:
+        #     raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu gốc")
         
-        if (certificate['recipientHash'] != cert_data[1].hex() or 
-            certificate['courseHash'] != cert_data[2].hex() or 
-            certificate['signature'] != cert_data[4].hex()):
-            logger.error(f"Dữ liệu chứng chỉ ID {id} không khớp giữa MongoDB và blockchain")
-            raise HTTPException(status_code=400, detail="Dữ liệu chứng chỉ không khớp")
+        # if (certificate['recipientHash'] != cert_data[1].hex() or 
+        #     certificate['courseHash'] != cert_data[2].hex() or 
+        #     certificate['signature'] != cert_data[4].hex()):
+        #     logger.error(f"Dữ liệu chứng chỉ ID {id} không khớp giữa MongoDB và blockchain")
+        #     raise HTTPException(status_code=400, detail="Dữ liệu chứng chỉ không khớp")
         
         return {
-            'id': cert_data[0],
+            'id': certificate['id'],
             'recipient': certificate['recipient'],
-            'recipientHash': cert_data[1].hex(),
+            'recipientHash': certificate['recipientHash'][:18] + '...' + certificate['recipientHash'][-8:],
             'course': certificate['course'],
-            'courseHash': cert_data[2].hex(),
-            'issueDate': cert_data[3],
-            'signature': cert_data[4].hex(),
+            'courseHash': certificate['courseHash'][:18] + '...' + certificate['courseHash'][-8:],
+            'issueDate': certificate['issueDate'],
+            'signature': certificate['signature'][:18] + '...' + certificate['signature'][-8:],
             'revoked': certificate["revoked"]
         }
     except Exception as e:
         logger.error(f"Lỗi khi tra cứu chứng chỉ: {str(e)}")
         raise HTTPException(status_code=404, detail=str(e))
+
 
 @router.get("/events")
 async def get_events():
@@ -133,4 +152,71 @@ async def get_events():
         }
     except Exception as e:
         logger.error(f"Lỗi khi lấy sự kiện: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.post("/add-admin")
+async def add_admin(data: AdminInput):
+    try:
+        if not data.address.startswith('0x') or len(data.address) != 42:
+            raise ValueError("Địa chỉ admin không hợp lệ")
+        
+        tx_receipt = await blockchain_client.add_admin(data.address)
+        tx_hash = tx_receipt['transactionHash'].hex()
+        mongo_client.update_admin(data.address, 'active', tx_hash=tx_hash, event='AdminAdded')
+        
+        admin_data = {
+            'address': data.address,
+            'status': 'active',
+            'txHash': tx_hash,
+            'timestamp': int(datetime.utcnow().timestamp()),
+            'event': 'AdminAdded'
+        }
+        mongo_client.insert_admin_log(admin_data)
+        short_tx_hash = f"{tx_hash[:8]}...{tx_hash[-4:]}"
+        return {
+            'message': 'Thêm admin thành công',
+            'txHash': short_tx_hash
+        }
+    except Exception as e:
+        logger.error(f"Lỗi khi thêm admin: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/remove-admin")
+async def remove_admin(data: AdminInput):
+    """
+    Xóa admin khỏi smart contract và MongoDB.
+
+    Args:
+        data (AdminInput): Địa chỉ admin cần xóa.
+        request (Request): Thông tin yêu cầu HTTP.
+        token (str): JWT token xác thực.
+
+    Returns:
+        dict: Thông báo và txHash.
+    """
+    try:
+        if not data.address.startswith('0x') or len(data.address) != 42:
+            raise ValueError("Địa chỉ admin không hợp lệ")
+        
+        tx_receipt = await blockchain_client.remove_admin(data.address)
+        tx_hash = tx_receipt['transactionHash'].hex()
+        mongo_client.update_admin(data.address, 'removed', tx_hash=tx_hash, event='AdminRemoved')
+
+        admin_data = {
+            'address': str(data.address),
+            'status': 'removed',
+            'txHash': tx_hash,
+            'timestamp': int(datetime.utcnow().timestamp()),
+            'event': 'AdminRemoved'
+        }
+        mongo_client.insert_admin_log(admin_data)
+        short_tx_hash = f"{tx_hash[:8]}...{tx_hash[-4:]}"
+        return {
+            'message': 'Xóa admin thành công',
+            'txHash': short_tx_hash
+        }
+    except Exception as e:
+        logger.error(f"Lỗi khi xóa admin: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

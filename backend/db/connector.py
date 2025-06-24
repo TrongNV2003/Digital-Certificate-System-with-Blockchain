@@ -1,3 +1,4 @@
+from datetime import datetime
 from loguru import logger
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
@@ -19,6 +20,7 @@ class MongoDBClient:
             self.db = self.client[db_name]
             self.cert_collection = self.db[db_config.collection_name]
             self.admin_collection = self.db[db_config.admin_collection_name]
+            self.admin_log_collection = self.db[db_config.admin_log_collection_name]
             
             self.client.admin.command("ping")
             logger.info(f"Connected to MongoDB at {uri}, database: {db_name}")
@@ -108,7 +110,7 @@ class MongoDBClient:
             logger.error(f"Lỗi khi lấy danh sách chứng chỉ: {str(e)}")
             raise
 
-    def update_admin(self, admin_address: str, status: str) -> None:
+    def update_admin(self, admin_address: str, status: str, tx_hash: str = None, event: str = None) -> None:
         """
         Update admin status.
 
@@ -117,9 +119,18 @@ class MongoDBClient:
             status (str): Trạng thái ('active' hoặc 'removed').
         """
         try:
-            result = self.admin_collection.update_one(
+            update_data = {
+            "address": admin_address,
+            "status": status,
+            "timestamp": int(datetime.utcnow().timestamp())
+            }
+            if tx_hash:
+                update_data["txHash"] = tx_hash
+            if event:
+                update_data["event"] = event
+            self.admin_collection.update_one(
                 {"address": admin_address},
-                {"$set": {"status": status}},
+                {"$set": update_data},
                 upsert=True
             )
             logger.info(f"Update admin {admin_address} with status: {status}")
@@ -138,11 +149,34 @@ class MongoDBClient:
             admins = self.admin_collection.find({})
             result = []
             for admin in admins:
+                if not isinstance(admin, dict):
+                    logger.warn(f"Bản ghi admin không hợp lệ: {admin}")
+                    continue
                 if "_id" in admin:
                     admin["_id"] = str(admin["_id"])
+                # Đảm bảo các trường cần thiết
+                required_fields = ['address', 'status', 'txHash', 'timestamp', 'event']
+                for field in required_fields:
+                    if field not in admin:
+                        logger.warn(f"Thiếu trường {field} trong admin: {admin}")
+                        admin[field] = None
                 result.append(admin)
             logger.debug(f"Found {len(result)} admins")
             return result
         except Exception as e:
             logger.error(f"Lỗi khi lấy danh sách admin: {str(e)}")
+            raise
+
+    def insert_admin_log(self, admin_data: Dict[str, Any]) -> None:
+        """
+        Insert admin log into MongoDB.
+
+        Args:
+            admin_data (Dict[str, Any]): Admin log data (address, status, txHash, timestamp, event).
+        """
+        try:
+            self.admin_log_collection.insert_one(admin_data)
+            logger.info(f"Inserted admin log for {admin_data['address']}")
+        except Exception as e:
+            logger.error(f"Lỗi khi lưu admin log: {str(e)}")
             raise

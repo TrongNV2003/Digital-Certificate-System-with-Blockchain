@@ -36,6 +36,10 @@ class MongoDBConfig(BaseSettings):
         default='admins',
         description="Name of the MongoDB collection for admin accounts"
     )
+    admin_log_collection_name: str = Field(
+        default='admin_logs',
+        description="Name of the MongoDB collection for admin logs"
+    )
 
 class ABIConfig(BaseSettings):
     contract_abi_path: str = Field(

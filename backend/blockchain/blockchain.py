@@ -11,6 +11,7 @@ from loguru import logger
 from eth_account import Account
 from eth_account.messages import encode_defunct
 from fastapi import HTTPException
+from web3.middleware import ExtraDataToPOAMiddleware
 
 from backend.config.setting import web3_config, abi_config
 
@@ -21,6 +22,7 @@ class BlockchainClient:
         Khởi tạo client blockchain với Web3.
         """
         self.w3 = Web3(Web3.HTTPProvider(web3_config.infura_url))
+        self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
         if not self.w3.is_connected():
             logger.error("Cannot connect to Sepolia")
             raise Exception("Cannot connect to Sepolia")
@@ -39,7 +41,7 @@ class BlockchainClient:
         """
         Calculate hash keccak256.
         """
-        return self.w3.keccak(text=data).hex()
+        return self.w3.to_hex(self.w3.keccak(text=data))
 
     def create_signature(self, id: str, recipient_hash: str, course_hash: str) -> str:
         """
@@ -54,6 +56,9 @@ class BlockchainClient:
             str: hex signature.
         """
         try:
+            if not (recipient_hash.startswith('0x') and course_hash.startswith('0x')):
+                raise ValueError("Recipient hash và course hash phải là hex string")
+            
             message = self.w3.solidity_keccak(
                 ['string', 'bytes32', 'bytes32'],
                 [id, self.w3.to_bytes(hexstr=recipient_hash), self.w3.to_bytes(hexstr=course_hash)]
@@ -89,6 +94,11 @@ class BlockchainClient:
             signed_txn = self.w3.eth.account.sign_transaction(txn, web3_config.private_key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+            
+            if tx_receipt.status == 0:
+                logger.error(f"Transaction failed: {tx_hash.hex()}")
+                raise HTTPException(status_code=500, detail="Transaction failed on blockchain")
+
             logger.info(f"Transaction successful: {tx_receipt['transactionHash'].hex()}")
             return tx_receipt
         except Exception as e:
@@ -109,7 +119,10 @@ class BlockchainClient:
             dict: Biên nhận giao dịch.
         """
         function_call = self.contract.functions.issueCertificate(
-            id, self.w3.to_bytes(hexstr=recipient_hash), self.w3.to_bytes(hexstr=course_hash), self.w3.to_bytes(hexstr=signature)
+            id,
+            self.w3.to_bytes(hexstr=recipient_hash),
+            self.w3.to_bytes(hexstr=course_hash),
+            self.w3.to_bytes(hexstr=signature)
         )
         return await self.send_transaction(function_call)
 
@@ -142,7 +155,7 @@ class BlockchainClient:
             return cert
         except Exception as e:
             logger.error(f"Lỗi tra cứu chứng chỉ: {str(e)}")
-            raise HTTPException(status_code=404, detail=str(e))
+            raise HTTPException(status_code=404, detail=f"Chứng chỉ ID {id} không tồn tại trên blockchain: {str(e)}")
         
     async def add_admin(self, new_admin_address: str):
         """
@@ -157,6 +170,25 @@ class BlockchainClient:
         try:
             function_call = self.contract.functions.addAdmin(new_admin_address)
             return await self.send_transaction(function_call)
+        
         except Exception as e:
             logger.error(f"Lỗi khi thêm admin: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    async def remove_admin(self, admin_address: str):
+        """
+        Remove an admin from the smart contract.
+
+        Args:
+            admin_address (str): Địa chỉ ví của admin cần xóa.
+
+        Returns:
+            dict: Transaction receipt.
+        """
+        try:
+            function_call = self.contract.functions.removeAdmin(admin_address)
+            return await self.send_transaction(function_call)
+
+        except Exception as e:
+            logger.error(f"Lỗi khi xóa admin: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))

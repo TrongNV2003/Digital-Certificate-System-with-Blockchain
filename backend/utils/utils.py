@@ -8,3 +8,6 @@ class CertificateInput(BaseModel):
 
 class RevokeInput(BaseModel):
     id: str
+    
+class AdminInput(BaseModel):
+    address: str
