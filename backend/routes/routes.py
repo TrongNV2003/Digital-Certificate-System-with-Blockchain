@@ -2,14 +2,17 @@ import os
 import jwt
 import bcrypt
 import asyncio
+from io import BytesIO
 from loguru import logger
 from datetime import datetime, timedelta
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from backend.db.connector import MongoDBClient
 from backend.blockchain.blockchain import BlockchainClient
 from backend.utils.utils import CertificateInput, RevokeInput, AdminInput
+from backend.utils.pdf_generator import generate_certificate_pdf
 
 router = APIRouter(prefix="/api", tags=["Certificate"])
 
@@ -94,7 +97,6 @@ async def issue_certificate(data: CertificateInput, payload=Depends(verify_token
             logger.error(f"Giao dịch cấp chứng chỉ ID {data.id} thất bại")
             raise HTTPException(status_code=500, detail="Giao dịch thất bại trên blockchain")
         
-        await asyncio.sleep(10)
         certificate_data = {
             'id': data.id,
             'recipient': data.recipient,
@@ -107,15 +109,31 @@ async def issue_certificate(data: CertificateInput, payload=Depends(verify_token
             'revoked': False
         }
         mongo_client.insert_certificate(certificate_data)
+        
+        tx_hash = tx_receipt['transactionHash'].hex()
+        block = blockchain_client.w3.eth.get_block(tx_receipt['blockNumber'])
+        issue_date = datetime.fromtimestamp(block['timestamp']).strftime("%d/%m/%Y")
+        pdf_data = generate_certificate_pdf(
+               cert_id=data.id,
+               recipient=data.recipient,
+               course=data.course,
+               issue_date=issue_date,
+               tx_hash=tx_hash
+            )
 
-        return {
-            'message': 'Cấp chứng chỉ thành công',
-            'txHash': tx_receipt['transactionHash'].hex()
-        }
+        return StreamingResponse(
+               BytesIO(pdf_data),
+               media_type="application/pdf",
+               headers={"Content-Disposition": f"attachment; filename=certificate_{data.id}.pdf"}
+            )
+        
     except Exception as e:
         logger.error(f"Lỗi khi cấp chứng chỉ: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+    except Exception as e:
+        logger.error(f"Lỗi khi cấp chứng chỉ ID {data.id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/revoke-certificate")
 async def revoke_certificate(data: RevokeInput, payload=Depends(verify_token)):
