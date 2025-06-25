@@ -22,8 +22,20 @@ function IssueCert({ token }) {
     }
     setLoading(true);
     try {
-      const response = await api.issueCertificate(formData, token);
-      toast.success(`Cấp chứng chỉ thành công! TxHash: ${response.data.txHash}`);
+      const response = await api.issueCertificate(formData, token, {
+        responseType: 'blob' // Nhận dữ liệu dạng blob (file PDF)
+      });
+      toast.success('Cấp chứng chỉ thành công!');
+      
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `certificate_${formData.id}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
       setFormData({ id: '', recipient: '', course: '' });
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Lỗi khi cấp chứng chỉ');

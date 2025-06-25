@@ -39,7 +39,7 @@ const api = {
     );
   },
 
-  issueCertificate: async (data, token) => {
+  issueCertificate: async (data, token, config = {}) => {
     return await axios.post(
       `${API_URL}/api/issue-certificate`,
       data,
@@ -47,6 +47,7 @@ const api = {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        ...config
       }
     );
   },
