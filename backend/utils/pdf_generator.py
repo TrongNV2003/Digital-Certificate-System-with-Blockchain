@@ -16,14 +16,14 @@ font_path = "backend/static/DejaVuSans.ttf"
 pdfmetrics.registerFont(TTFont('DejaVu', font_path))
 
 def get_logo_image():
-    logo_path = "backend/static/logo.png"
+    logo_path = "backend/static/hust.png"
     if os.path.exists(logo_path):
         return Image(logo_path, width=2 * inch, height=2 * inch)
     else:
         url = "https://www.python.org/static/community_logos/python-logo.png"
         r = requests.get(url)
         if r.status_code == 200:
-            tmp_path = "backend/static/python_logo.png"
+            tmp_path = "backend/static/hust.png"
             with open(tmp_path, "wb") as f:
                 f.write(r.content)
             img = Image(tmp_path, width=2 * inch, height=2 * inch)
